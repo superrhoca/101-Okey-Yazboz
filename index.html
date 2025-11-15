@@ -32,10 +32,16 @@
   <h1>101 Okey Yazboz — Kamera ile Oku ve Hesapla</h1>
 
   <div id="controls">
-    <input id="file" type="file" accept="image/*" capture="environment" />
+    <!-- Görsel seçim butonları -->
+    <button id="btnCamera">Kamera ile çek</button>
+    <button id="btnGallery" class="secondary">Galeriden seç</button>
     <button id="resetBtn" class="secondary">Yeni Fotoğraf</button>
     <button id="ocrBtn">OCR & Hesapla</button>
     <button id="autoSplit" class="secondary">4 Eşit Sütun Yerleştir</button>
+
+    <!-- Gizli inputlar (birisi kamera, diğeri galeri) -->
+    <input id="fileCamera" type="file" accept="image/*" capture="environment" style="display:none" />
+    <input id="fileGallery" type="file" accept="image/*" style="display:none" />
   </div>
 
   <div id="canvasWrap">
@@ -62,7 +68,11 @@
 
 <script>
 (() => {
-  const fileInput = document.getElementById('file');
+  // Elementler
+  const btnCamera = document.getElementById('btnCamera');
+  const btnGallery = document.getElementById('btnGallery');
+  const fileCamera = document.getElementById('fileCamera');
+  const fileGallery = document.getElementById('fileGallery');
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const wrap = document.getElementById('canvasWrap');
@@ -79,6 +89,22 @@
 
   function setStatus(t) { status.textContent = t; }
 
+  // Görsel yükleme ortak fonksiyonu
+  function loadImageFile(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    img = new Image();
+    img.onload = () => {
+      naturalW = img.width;
+      naturalH = img.height;
+      drawImageToCanvas();
+      setDefaultHandles();
+      setStatus('Fotoğraf yüklendi. Sütun sınırlarını ayarlayın, sonra "OCR & Hesapla"ya basın.');
+    };
+    img.src = url;
+  }
+
+  // Canvas çizimi responsive
   function drawImageToCanvas() {
     const maxWidth = Math.min(window.innerWidth - 24, 760);
     const scale = Math.min(maxWidth / naturalW, 1);
@@ -103,25 +129,26 @@
     });
   }
 
-  fileInput.addEventListener('change', async (ev) => {
-    const f = ev.target.files && ev.target.files[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    img = new Image();
-    img.onload = () => {
-      naturalW = img.width;
-      naturalH = img.height;
-      drawImageToCanvas();
-      setDefaultHandles();
-      setStatus('Fotoğraf yüklendi. Sütun sınırlarını ayarlayın, sonra "OCR & Hesapla"ya basın.');
-    };
-    img.src = url;
+  // Buton tıklamaları: gizli inputları tetikle
+  btnCamera.addEventListener('click', () => fileCamera.click());
+  btnGallery.addEventListener('click', () => fileGallery.click());
+
+  // input değişim olayları (her iki input da aynı işlevi kullanır)
+  fileCamera.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) loadImageFile(f);
+    // input tekrar kullanılsın diye sıfırla (aynı dosya tekrar seçilse de çalışır)
+    fileCamera.value = '';
+  });
+  fileGallery.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) loadImageFile(f);
+    fileGallery.value = '';
   });
 
   resetBtn.addEventListener('click', () => {
     ctx.clearRect(0,0,canvas.width, canvas.height);
     resultsDiv.innerHTML = '';
-    fileInput.value = '';
     setStatus('Yeni fotoğraf seçin.');
   });
 
@@ -134,6 +161,7 @@
     });
   });
 
+  // draggable handles (pointer events)
   handles.forEach(h => {
     h.addEventListener('pointerdown', (e) => {
       dragging = h;
@@ -152,6 +180,7 @@
     });
   });
 
+  // sütun kırpma
   function cropColumnImage(colIndex) {
     const w = canvas.width;
     const h = canvas.height;
@@ -168,6 +197,7 @@
     return temp;
   }
 
+  // OCR + hesaplama
   async function runOCRAndCalculate() {
     if (!canvas.width) { alert('Önce fotoğraf yükleyin.'); return; }
     setStatus('OCR çalışıyor — lütfen bekleyin (her sütun için kısa süre)...');
@@ -239,6 +269,7 @@
 
   ocrBtn.addEventListener('click', runOCRAndCalculate);
 
+  // init handle positions
   handles.forEach((h,i) => {
     if (!h.dataset.pos) h.dataset.pos = (i+1)/(handles.length+1);
   });
@@ -247,7 +278,7 @@
     if (img && img.src) drawImageToCanvas();
   });
 
-  setStatus('Fotoğraf yükleyin veya çekin. Yükledikten sonra dikey çizgileri sütun sınırlarına getirip OCR & Hesapla\'ya basın.');
+  setStatus('Fotoğraf yükleyin veya çekin. "Kamera ile çek" veya "Galeriden seç" kullanın. Yükledikten sonra dikey çizgileri sütun sınırlarına getirip OCR & Hesapla\'ya basın.');
 })();
 </script>
 </body>
