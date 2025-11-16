@@ -1,497 +1,67 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-  <title>101 Okey Yazboz — Otomatik Sütun Algılama</title>
-  <style>
-    body{font-family:Arial,Helvetica,sans-serif;margin:12px;background:#fafafa;color:#111}
-    h1{font-size:18px;margin:6px 0 12px}
-    #controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-    button{padding:10px 12px;border-radius:6px;border:none;background:#1e88e5;color:#fff;font-weight:700}
-    button.secondary{background:#666}
-    #canvasWrap{position:relative;width:100%;max-width:760px;margin-bottom:8px;background:#222}
-    canvas{width:100%;height:auto;display:block}
-    .handle{position:absolute;top:6px;bottom:6px;width:10px;margin-left:-5px;background:rgba(255,100,0,0.85);border-radius:4px;touch-action:none}
-    .handle:active{background:rgba(255,60,0,1)}
-    #status{margin:8px 0;color:#333}
-    .colResult{border:1px solid #ddd;padding:8px;border-radius:6px;background:#fff;margin-bottom:8px}
-    textarea{width:100%;min-height:64px;font-size:14px;padding:6px;border:1px solid #ccc;border-radius:6px;resize:vertical}
-    table{width:100%;border-collapse:collapse;margin-top:8px}
-    th,td{padding:6px 8px;border:1px solid #eee;text-align:center}
-    .loser{color:#b71c1c;font-weight:800}
-    small{color:#666}
-    .note{color:#555;font-size:13px}
-    img.preview{width:100%;max-height:160px;object-fit:contain;border:1px solid #eee;margin-bottom:6px}
-    .detected{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-    .detected .box{border:1px dashed #ccc;padding:6px;border-radius:6px;background:#fff}
-  </style>
-  <!-- Tesseract -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.3/dist/tesseract.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>101 Okey Yazboz</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>101 Okey Yazboz — Otomatik Sütun Algılama (Sadece Sayı & Çizgi)</h1>
 
-  <div id="controls">
-    <button id="btnCamera">Kamera ile çek</button>
-    <button id="btnGallery" class="secondary">Galeriden seç</button>
-    <button id="autoDetect" class="secondary">Otomatik Algıla</button>
-    <button id="ocrBtn">OCR & Hesapla</button>
-    <button id="resetBtn" class="secondary">Yeni Fotoğraf</button>
+    <h1>101 Okey Ceza Takip Tablosu</h1>
 
-    <input id="fileCamera" type="file" accept="image/*" capture="environment" style="display:none"/>
-    <input id="fileGallery" type="file" accept="image/*" style="display:none"/>
-  </div>
+    <table id="score-table">
+        <thead>
+            <tr>
+                <th>M</th>
+                <th>F</th>
+                <th>H</th>
+                <th>N</th>
+            </tr>
+        </thead>
+        
+        <tbody id="score-body">
+            <tr>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">68</td>
+            </tr>
+            <tr>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">82</td>
+                <td contenteditable="true">15</td>
+            </tr>
+            <tr>
+                <td contenteditable="true">79</td>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">10</td>
+                <td contenteditable="true">200</td>
+            </tr>
+             <tr>
+                <td contenteditable="true">28</td>
+                <td contenteditable="true">200</td>
+                <td contenteditable="true">80</td>
+                <td contenteditable="true">200</td>
+            </tr>
+            </tbody>
 
-  <div id="canvasWrap">
-    <canvas id="c"></canvas>
-    <!-- otomatik oluşturulacak/ayarlanacak 3 ayrım tutacağı + sınır çizgileri -->
-    <div id="sep0" class="handle" style="display:none"></div>
-    <div id="sep1" class="handle" style="display:none"></div>
-    <div id="sep2" class="handle" style="display:none"></div>
-  </div>
+        <tfoot>
+            <tr>
+                <td id="total-m">0</td>
+                <td id="total-f">0</td>
+                <td id="total-h">0</td>
+                <td id="total-n">0</td>
+            </tr>
+        </tfoot>
+    </table>
 
-  <div id="status">Fotoğraf yükleyin veya çekin. Ardından "Otomatik Algıla" ya da elle düzeltme için tutacakları sürükleyin.</div>
+    <div class="buttons">
+        <button id="add-row-btn">Yeni El Ekle</button>
+        <button id="calculate-btn">Toplamları Hesapla</button>
+    </div>
 
-  <div class="detected">
-    <div class="box" id="detectedInfo">Algılama bilgisi burada gösterilecek.</div>
-  </div>
-
-  <div id="results"></div>
-
-<script>
-(() => {
-  const btnCamera = document.getElementById('btnCamera');
-  const btnGallery = document.getElementById('btnGallery');
-  const autoDetectBtn = document.getElementById('autoDetect');
-  const ocrBtn = document.getElementById('ocrBtn');
-  const resetBtn = document.getElementById('resetBtn');
-  const fileCamera = document.getElementById('fileCamera');
-  const fileGallery = document.getElementById('fileGallery');
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-  const wrap = document.getElementById('canvasWrap');
-  const status = document.getElementById('status');
-  const resultsDiv = document.getElementById('results');
-  const detectedInfo = document.getElementById('detectedInfo');
-
-  const seps = [document.getElementById('sep0'), document.getElementById('sep1'), document.getElementById('sep2')];
-  let img = new Image();
-  let naturalW = 0, naturalH = 0;
-  let dragging = null;
-
-  // helper: set status
-  function setStatus(s){ status.textContent = s; }
-
-  // load image
-  function loadImageFile(file){
-    if(!file) return;
-    const url = URL.createObjectURL(file);
-    img = new Image();
-    img.onload = () => {
-      naturalW = img.width;
-      naturalH = img.height;
-      drawImage();
-      setStatus('Fotoğraf yüklendi. "Otomatik Algıla" ile sütun ve çizgiler tespit edilebilir.');
-    };
-    img.src = url;
-  }
-
-  btnCamera.addEventListener('click', ()=> fileCamera.click());
-  btnGallery.addEventListener('click', ()=> fileGallery.click());
-  fileCamera.addEventListener('change', (e)=>{ loadImageFile(e.target.files[0]); fileCamera.value=''; });
-  fileGallery.addEventListener('change', (e)=>{ loadImageFile(e.target.files[0]); fileGallery.value=''; });
-
-  resetBtn.addEventListener('click', ()=>{
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    resultsDiv.innerHTML = '';
-    detectedInfo.innerText = 'Algılama bilgisi burada gösterilecek.';
-    seps.forEach(s=> s.style.display='none');
-    setStatus('Yeni fotoğraf seçin.');
-  });
-
-  function drawImage(){
-    if(!naturalW) return;
-    const maxWidth = Math.min(window.innerWidth - 24, 760);
-    const scale = Math.min(maxWidth / naturalW, 1);
-    canvas.width = Math.round(naturalW * scale);
-    canvas.height = Math.round(naturalH * scale);
-    canvas.style.width = canvas.width + 'px';
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    wrap.style.height = canvas.clientHeight + 'px';
-  }
-
-  // pointer drag handles
-  seps.forEach(h=>{
-    h.addEventListener('pointerdown', (e)=>{ dragging=h; h.setPointerCapture(e.pointerId); e.preventDefault(); });
-    h.addEventListener('pointerup', ()=> dragging=null);
-    h.addEventListener('pointercancel', ()=> dragging=null);
-    h.addEventListener('pointermove', (e)=>{
-      if(!dragging) return;
-      const rect = canvas.getBoundingClientRect();
-      let x = e.clientX - rect.left;
-      x = Math.max(2, Math.min(rect.width-2, x));
-      dragging.style.left = x+'px';
-      dragging.dataset.pos = (x/rect.width).toString();
-    });
-  });
-
-  window.addEventListener('resize', ()=> { if(img.src) drawImage(); });
-
-  // IMAGE PROCESSING: helper to get grayscale image data (resized to canvas)
-  function getImageGrayArray(){
-    const w = canvas.width, h = canvas.height;
-    const data = ctx.getImageData(0,0,w,h).data;
-    const gray = new Uint8ClampedArray(w*h);
-    for(let i=0, j=0;i<data.length;i+=4,j++){
-      // luminosity
-      gray[j] = (0.21*data[i] + 0.72*data[i+1] + 0.07*data[i+2]) | 0;
-    }
-    return {gray, w, h};
-  }
-
-  // adaptive threshold (Otsu or simple) -> we will use simple local thresholding via global mean
-  function thresholdBinary(gray, w, h){
-    // compute mean
-    let sum=0;
-    for(let i=0;i<gray.length;i++) sum+=gray[i];
-    const mean = sum/gray.length;
-    const bin = new Uint8ClampedArray(gray.length);
-    for(let i=0;i<gray.length;i++){
-      bin[i] = gray[i] < (mean + 20) ? 1 : 0; // tune: treat darker as foreground
-    }
-    return bin;
-  }
-
-  // vertical projection: for each x sum of foreground pixels (binary image)
-  function verticalProjection(bin, w, h){
-    const vp = new Float32Array(w);
-    for(let x=0;x<w;x++){
-      let s=0;
-      for(let y=0;y<h;y++){
-        s += bin[y*w + x];
-      }
-      vp[x]=s;
-    }
-    return vp;
-  }
-
-  // horizontal projection (for detecting top/bottom long lines)
-  function horizontalProjection(bin, w, h){
-    const hp = new Float32Array(h);
-    for(let y=0;y<h;y++){
-      let s=0;
-      for(let x=0;x<w;x++){
-        s += bin[y*w + x];
-      }
-      hp[y]=s;
-    }
-    return hp;
-  }
-
-  // smooth array (simple moving average)
-  function smooth(arr, radius=8){
-    const out = new Float32Array(arr.length);
-    const n = arr.length;
-    const window = 2*radius+1;
-    let sum=0;
-    for(let i=0;i<n;i++){
-      // initialize
-      if(i===0){
-        sum=0;
-        const end = Math.min(n-1, radius);
-        for(let k=0;k<=end;k++) sum+=arr[k];
-      } else {
-        const addIdx = Math.min(n-1, i+radius);
-        const subIdx = Math.max(0, i-radius-1);
-        sum += arr[addIdx];
-        if(subIdx>=0) sum -= arr[subIdx];
-      }
-      const left = Math.max(0, i-radius);
-      const right = Math.min(n-1, i+radius);
-      out[i] = sum / (right-left+1);
-    }
-    return out;
-  }
-
-  // find N peak indices (largest peaks) in array
-  function findNPeaks(arr, N){
-    const indexed = arr.map((v,i)=>({v,i}));
-    indexed.sort((a,b)=>b.v - a.v);
-    const peaks = indexed.slice(0,N).map(x=>x.i).sort((a,b)=>a-b);
-    return peaks;
-  }
-
-  // auto detect: find top/bottom separator lines and 4 columns
-  async function autoDetect(){
-    if(!canvas.width){ alert('Önce fotoğraf yükleyin.'); return; }
-    setStatus('Otomatik algılama başlıyor — birkaç saniye...');
-
-    // get binary image
-    const {gray, w, h} = getImageGrayArray();
-    const bin = thresholdBinary(gray,w,h);
-
-    // detect top horizontal line: find row with long run of foreground pixels (a horizontal thick line)
-    const hp = horizontalProjection(bin,w,h);
-    const hpSm = smooth(hp, 6);
-    // find rows where hpSm > 60% of max AND length of continuous run > threshold
-    const maxHp = Math.max(...hpSm);
-    const thresholdRow = maxHp * 0.5; // tuned
-    // find first row after very top where hpSm exceeds thresholdRow for a small region => top line
-    let topLine = 0;
-    for(let y=0;y<Math.floor(h*0.5);y++){
-      if(hpSm[y] > thresholdRow){
-        topLine = y;
-        break;
-      }
-    }
-    // find bottom line: search from bottom upwards
-    let bottomLine = h-1;
-    for(let y=h-1;y>Math.floor(h*0.5);y--){
-      if(hpSm[y] > thresholdRow){
-        bottomLine = y;
-        break;
-      }
-    }
-
-    // if not found reasonable lines, fallback to margins
-    if(topLine < 2) topLine = Math.round(h * 0.08); // 8% top margin
-    if(bottomLine > h-3 || bottomLine <= topLine+10) bottomLine = Math.round(h * 0.92); // bottom 8%
-
-    // Crop the middle area between topLine and bottomLine for column detection
-    const cropH = bottomLine - topLine;
-    const cropW = w;
-    // build vertical projection on that cropped region
-    const vp = new Float32Array(cropW);
-    for(let x=0;x<cropW;x++){
-      let s=0;
-      for(let y=topLine;y<bottomLine;y++){
-        s += bin[y*w + x];
-      }
-      vp[x] = s;
-    }
-    const vpSm = smooth(vp, 12);
-
-    // find 4 peaks (centers of columns)
-    const peaks = findNPeaks(Array.from(vpSm), 4); // returns sorted indices
-    // if peaks length <4 (e.g. small noise), fallback to equal splits
-    let separators = [];
-    if(peaks.length >= 4){
-      // separators = midpoints between peaks
-      separators = [ (peaks[0]+peaks[1])/2, (peaks[1]+peaks[2])/2, (peaks[2]+peaks[3])/2 ];
-    } else {
-      // equal thirds
-      separators = [ cropW*0.25, cropW*0.5, cropW*0.75 ];
-    }
-
-    // convert separators to percentages relative to canvas width and position handles
-    const rectW = canvas.clientWidth;
-    seps.forEach((s,i)=>{
-      const x = Math.round((separators[i] / cropW) * rectW);
-      s.style.left = x + 'px';
-      s.dataset.pos = (separators[i] / cropW).toString();
-      s.style.display = 'block';
-    });
-
-    // show detected info
-    detectedInfo.innerHTML = `Üst çizgi (pixel): ${topLine}, Alt çizgi (pixel): ${bottomLine}. Sütun merkezleri (approx): ${peaks.map(p=>Math.round((p/cropW)*100)+'%').join(', ')}.<br>
-      Elle düzeltmek için turuncu tutamakları kaydırabilirsiniz.`;
-    // store top/bottom positions as dataset on canvas for use in cropping
-    canvas.dataset.topLine = topLine;
-    canvas.dataset.bottomLine = bottomLine;
-
-    setStatus('Otomatik algılama tamamlandı. Tutamakları kontrol edip "OCR & Hesapla"ya basın.');
-  }
-
-  autoDetectBtn.addEventListener('click', autoDetect);
-
-  // crop column by current handle positions (and top/bottom)
-  function cropColumnCanvasByHandles(colIndex){
-    const w = canvas.width, h = canvas.height;
-    const rect = canvas.getBoundingClientRect();
-    const rectW = rect.width;
-    const pos = seps.map(s=> parseFloat(s.dataset.pos || (parseFloat(s.style.left || 0)/rectW || 0.2)));
-    // build sorted boundaries with 0 and 1
-    const sorted = [0, ...pos.slice(0).sort((a,b)=>a-b), 1];
-    const left = Math.round(sorted[colIndex] * w);
-    const right = Math.round(sorted[colIndex+1] * w);
-    const topLine = canvas.dataset.topLine ? parseInt(canvas.dataset.topLine) : 0;
-    const bottomLine = canvas.dataset.bottomLine ? parseInt(canvas.dataset.bottomLine) : h;
-    const top = Math.max(0, topLine + 4); // small margin
-    const bottom = Math.max(top+1, bottomLine - 4);
-    const ch = bottom - top;
-    const cw = Math.max(2, right - left);
-    const temp = document.createElement('canvas');
-    temp.width = cw;
-    temp.height = ch;
-    const tctx = temp.getContext('2d');
-    tctx.drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
-    return temp;
-  }
-
-  // parse numbers per your rules
-  function parseNumbersFromTextForRules(s){
-    const norm = s.replace(/[–—−]/g,'-');
-    const lines = norm.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    const nums = [];
-    for(const line of lines){
-      // if line is single - or only dashes -> -101
-      if(/^[-\u2212]+$/.test(line)) { nums.push(-101); continue; }
-      // if 200 present as standalone token
-      if(/\b200\b/.test(line)){
-        // if line has other numbers, include them; else push 200
-        const m = line.match(/[-+]?\d+/g);
-        if(m && m.length>0){ m.forEach(x=>nums.push(parseInt(x,10))); continue; }
-        nums.push(200);
-        continue;
-      }
-      // generic integer extraction
-      const m = line.match(/[-+]?\d+/g);
-      if(m) m.forEach(x=> nums.push(parseInt(x,10)));
-    }
-    return nums;
-  }
-
-  // OCR & calculate using detected handles
-  async function runOCRAndCalculate(){
-    // ensure handles visible
-    if(!seps[0].style.display || seps[0].style.display==='none'){
-      if(!confirm('Sütun ayırıcıları otomatik algılanmadı. Otomatik algılama yapmak ister misiniz?')) return;
-      await autoDetect();
-    }
-    setStatus('OCR & Hesaplama başlıyor — lütfen bekleyin...');
-    resultsDiv.innerHTML='';
-    const colCount = 4;
-    const colData = [];
-    for(let i=0;i<colCount;i++){
-      const temp = cropColumnCanvasByHandles(i);
-      const blob = await new Promise(res => temp.toBlob(res,'image/png'));
-      const url = URL.createObjectURL(blob);
-      const container = document.createElement('div');
-      container.className='colResult';
-      container.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><strong>Sütun ${i+1}</strong><small>OCR sonucu düzenlenebilir</small></div>
-        <img src="${url}" class="preview"/>
-        <div><em>Tanıma sonucu (yükleniyor...)</em></div>
-        <textarea data-col="${i}"></textarea>`;
-      resultsDiv.appendChild(container);
-
-      try{
-        const { data:{ text } } = await Tesseract.recognize(blob, 'tur+eng', { logger: m => {}});
-        const ta = container.querySelector('textarea');
-        ta.value = text.trim();
-        colData.push({raw:text, textarea:ta, previewUrl:url});
-      } catch(err){
-        console.error('OCR column',i,err);
-        const ta = container.querySelector('textarea');
-        ta.value = '';
-        colData.push({raw:'', textarea:ta, previewUrl:url});
-      }
-    }
-
-    // parse and summarize
-    const summary = [];
-    for(let i=0;i<colData.length;i++){
-      const t = colData[i].textarea.value;
-      const nums = parseNumbersFromTextForRules(t);
-      const sum = nums.reduce((a,b)=>a+(isNaN(b)?0:b), 0);
-      summary.push({index:i+1,numbers:nums,sum});
-    }
-
-    // display table
-    let maxSum = Math.max(...summary.map(s=>s.sum));
-    if(!isFinite(maxSum)) maxSum = 0;
-    const tbl = document.createElement('table');
-    tbl.innerHTML = `<thead><tr><th>Sütun</th><th>Toplam</th><th>Bulunan Sayılar</th></tr></thead>`;
-    const tbody = document.createElement('tbody');
-    summary.forEach(s=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${s.index}</td><td class="${s.sum===maxSum && maxSum>0 ? 'loser':''}">${s.sum}</td><td>${s.numbers.join(', ')}</td>`;
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    resultsDiv.appendChild(tbl);
-
-    setStatus('OCR tamamlandı. Alt özet algılanıyor ve karşılaştırılıyor (varsa)...');
-
-    // detect bottom summary automatically (crop area below bottomLine)
-    const h = canvas.height;
-    const topLine = canvas.dataset.topLine ? parseInt(canvas.dataset.topLine) : Math.round(h*0.08);
-    const bottomLine = canvas.dataset.bottomLine ? parseInt(canvas.dataset.bottomLine) : Math.round(h*0.92);
-    const lowCrop = document.createElement('canvas');
-    const lw = canvas.width;
-    const lh = Math.max(2, Math.round(h - bottomLine + 6));
-    lowCrop.width = lw;
-    lowCrop.height = lh;
-    const lctx = lowCrop.getContext('2d');
-    // draw area starting bottomLine to bottom
-    lctx.drawImage(canvas, 0, bottomLine-2, lw, lh, 0, 0, lw, lh);
-    const lowBlob = await new Promise(res=> lowCrop.toBlob(res,'image/png'));
-    try{
-      const { data:{ text } } = await Tesseract.recognize(lowBlob, 'tur+eng', { logger: m=>{} });
-      const cleaned = text.replace(/[^\d\-\s,]/g,' ').trim();
-      const found = (cleaned.match(/[-+]?\d+/g) || []).map(x=>parseInt(x,10));
-      if(found.length>0){
-        // compare left-to-right: pick up to 4 numbers
-        const comp = found.slice(0,4);
-        const calc = summary.map(s=>s.sum);
-        let compareHtml = '<div style="margin-top:8px"><strong>Alt satır (kağıttaki) algılanan sayılar:</strong> ' + comp.join(' — ') + '</div>';
-        compareHtml += '<div style="margin-top:6px"><strong>Hesaplanan:</strong> ' + calc.join(' — ') + '</div>';
-        // differences
-        const diffs = comp.map((v,i)=> (typeof v==='number' && typeof calc[i]==='number') ? (v - calc[i]) : '—');
-        compareHtml += '<div style="margin-top:6px"><strong>Fark (kağıt - hesap):</strong> ' + diffs.join(' — ') + '</div>';
-        resultsDiv.insertAdjacentHTML('beforeend', compareHtml);
-        setStatus('Alt satır algılandı ve karşılaştırıldı. Hatalıysa textarea içeriklerini düzenleyip tekrar OCR yapın.');
-      } else {
-        setStatus('Alt satır algılanamadı. Eğer kağıtta özet varsa daha net bir fotoğraf çekin.');
-      }
-    } catch(err){
-      console.warn('bottom OCR err',err);
-      setStatus('Alt satır OCR hatası veya algılanamadı.');
-    }
-  }
-
-  ocrBtn.addEventListener('click', runOCRAndCalculate);
-
-  // initial simple guidance: try autoDetect on load
-  setStatus('Sayfa hazır. Fotoğraf yükleyin, sonra "Otomatik Algıla"ya basın. Tutamakları istersen elle kaydırın.');
-
-  // export function to visually mark detected top/bottom lines (for debugging)
-  function drawDebugLines(){
-    drawImage(); // redraw
-    const w = canvas.width, h = canvas.height;
-    const topLine = canvas.dataset.topLine ? parseInt(canvas.dataset.topLine) : null;
-    const bottomLine = canvas.dataset.bottomLine ? parseInt(canvas.dataset.bottomLine) : null;
-    ctx.save();
-    if(topLine!==null){
-      ctx.strokeStyle='lime';
-      ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(0, topLine); ctx.lineTo(w, topLine); ctx.stroke();
-    }
-    if(bottomLine!==null){
-      ctx.strokeStyle='lime';
-      ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(0, bottomLine); ctx.lineTo(w, bottomLine); ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // expose autoDetect result draw hook: after autoDetect sets canvas.dataset.topLine, bottomLine, call drawDebugLines
-  // modify autoDetect to call drawDebugLines at end (we'll wrap by replacing autoDetect with decorated version)
-  (function decorateAuto(){
-    const original = autoDetect;
-    window.__origAuto = original;
-    autoDetect = async function(){
-      await original();
-      drawDebugLines();
-    };
-    autoDetectBtn.removeEventListener('click', autoDetect);
-    autoDetectBtn.addEventListener('click', autoDetect);
-  })();
-
-  // make seps visible if not yet
-  // nothing more to init
-})();
-</script>
+    <script src="script.js"></script>
 </body>
 </html>
