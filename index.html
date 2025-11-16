@@ -3,65 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>101 Okey Yazboz</title>
+    <title>OCR ile 101 Okey Yazboz</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <h1>101 Okey Ceza Takip Tablosu</h1>
+    <h1>OCR ile Yazboz Hesaplayıcı</h1>
+    <p>Hesaplamak için yazboz kağıdınızın fotoğrafını yükleyin:</p>
 
-    <table id="score-table">
-        <thead>
-            <tr>
-                <th>M</th>
-                <th>F</th>
-                <th>H</th>
-                <th>N</th>
-            </tr>
-        </thead>
-        
-        <tbody id="score-body">
-            <tr>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">68</td>
-            </tr>
-            <tr>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">82</td>
-                <td contenteditable="true">15</td>
-            </tr>
-            <tr>
-                <td contenteditable="true">79</td>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">10</td>
-                <td contenteditable="true">200</td>
-            </tr>
-             <tr>
-                <td contenteditable="true">28</td>
-                <td contenteditable="true">200</td>
-                <td contenteditable="true">80</td>
-                <td contenteditable="true">200</td>
-            </tr>
-            </tbody>
+    <input type="file" id="image-upload" accept="image/*" />
+    <button id="calculate-btn">Hesapla</button>
 
-        <tfoot>
-            <tr>
-                <td id="total-m">0</td>
-                <td id="total-f">0</td>
-                <td id="total-h">0</td>
-                <td id="total-n">0</td>
-            </tr>
-        </tfoot>
-    </table>
+    <hr>
 
-    <div class="buttons">
-        <button id="add-row-btn">Yeni El Ekle</button>
-        <button id="calculate-btn">Toplamları Hesapla</button>
+    <h2>Hesaplama Sonuçları</h2>
+    <div id="status">Lütfen bir resim seçin...</div>
+    <div id="results">
+        <p>M Toplam: <strong id="total-m">0</strong></p>
+        <p>F Toplam: <strong id="total-f">0</strong></p>
+        <p>H Toplam: <strong id="total-h">0</strong></p>
+        <p>N Toplam: <strong id="total-n">0</strong></p>
     </div>
-
+    
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    
     <script src="script.js"></script>
 </body>
 </html>
