@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-  <title>101 Okey Yazboz OCR - Hesapla</title>
+  <title>101 Okey Yazboz OCR - Hesapla (Güncel)</title>
   <style>
     body { font-family: Arial, Helvetica, sans-serif; margin: 12px; background:#fafafa; color:#111 }
     h1 { font-size:18px; margin:6px 0 12px }
@@ -24,51 +24,65 @@
     small { color:#666 }
     #tips { margin-top:8px; color:#444; font-size:13px }
     img.preview { width:100%; max-height:160px; object-fit:contain; border:1px solid #eee; margin-bottom:6px }
+    .nameRow { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap }
+    .nameInput { flex:1; min-width:60px; text-align:center; padding:6px; border-radius:6px; border:1px solid #ddd }
+    .summaryBox { border:1px dashed #ccc; padding:8px; border-radius:6px; background:#fff; margin-top:8px }
+    .note { color:#555; font-size:13px }
   </style>
   <!-- Tesseract.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.3/dist/tesseract.min.js"></script>
 </head>
 <body>
-  <h1>101 Okey Yazboz — Kamera ile Oku ve Hesapla</h1>
+  <h1>101 Okey Yazboz — Kamera ile Oku ve Hesapla (Kağıt Düzenli)</h1>
 
   <div id="controls">
-    <!-- Görsel seçim butonları -->
     <button id="btnCamera">Kamera ile çek</button>
     <button id="btnGallery" class="secondary">Galeriden seç</button>
     <button id="resetBtn" class="secondary">Yeni Fotoğraf</button>
     <button id="ocrBtn">OCR & Hesapla</button>
     <button id="autoSplit" class="secondary">4 Eşit Sütun Yerleştir</button>
 
-    <!-- Gizli inputlar (birisi kamera, diğeri galeri) -->
     <input id="fileCamera" type="file" accept="image/*" capture="environment" style="display:none" />
     <input id="fileGallery" type="file" accept="image/*" style="display:none" />
   </div>
 
   <div id="canvasWrap">
     <canvas id="c"></canvas>
-    <!-- 4 draggable handles -->
     <div id="h0" class="handle" style="left:20%"></div>
     <div id="h1" class="handle" style="left:40%"></div>
     <div id="h2" class="handle" style="left:60%"></div>
     <div id="h3" class="handle" style="left:80%"></div>
   </div>
 
-  <div id="status">Fotoğraf yükleyin veya çekin.</div>
+  <div id="status">Fotoğraf yükleyin veya çekin. (Önce üstteki isim satırı otomatik algılanacak.)</div>
+
+  <div id="detectedNames" style="margin-top:8px">
+    <div style="margin-bottom:6px"><strong>Algılanan İsimler (soldan sağa):</strong></div>
+    <div class="nameRow" id="nameRow"></div>
+    <div class="note">Algılanan isimleri düzeltebilirsiniz. İsimler sütun sırasına göre atanır.</div>
+  </div>
 
   <div id="results"></div>
 
+  <div class="summaryBox" id="bottomSummary" style="display:none">
+    <strong>Alt Özet Satırı (kağıtta yazılmışsa):</strong>
+    <div id="bottomDetected"></div>
+    <div id="compareInfo" style="margin-top:6px"></div>
+  </div>
+
   <div id="tips">
-    <strong>İpuçları:</strong>
+    <strong>Notlar (kurallar):</strong>
     <ul>
-      <li>İyi aydınlatma ve net odak (otomatik odaklama çalışsın).</li>
-      <li>Kâğıdı kameraya mümkün olduğunca paralel tutun (çok eğik olursa perspektif hatası olur).</li>
-      <li>El yazısı çok kötü ise manuel düzenleme yapabilirsiniz; OCR sonuçları düzenlenebilir.</li>
+      <li>Kağıdın en üst satırında isimler olmalı — genelde ilk harfleriyle yazılıyor (M, F, H, N gibi). Sistem üstten küçük bir kırpma yapıp isimleri tespit eder.</li>
+      <li>İsimlerin altında uzun bir çizgi olur — bu çizgiyi görmezden geliyoruz; onu takip eden alt satırlar cezalar içerir.</li>
+      <li>Her sütunda alt alta yazılan sayılar cezadır. <code>200</code> yazısı özel bir işaret (kâğıdına göre "hiç açmamış") — uygulama bunu 200 puan olarak alır. Tek başına <code>-</code> ise "elindekini bitirmiş" anlamında kabul edilir ve **-101** puan olarak hesaplanır.</li>
+      <li>Son olarak kağıdın en altında uzun bir çizgi ve altındaki satır varsa (oyun özeti) uygulama onu da okumaya çalışır ve hesaplanan toplamlarla karşılaştırır.</li>
     </ul>
   </div>
 
 <script>
 (() => {
-  // Elementler
+  // Elements
   const btnCamera = document.getElementById('btnCamera');
   const btnGallery = document.getElementById('btnGallery');
   const fileCamera = document.getElementById('fileCamera');
@@ -82,29 +96,21 @@
   const resetBtn = document.getElementById('resetBtn');
   const autoSplit = document.getElementById('autoSplit');
   const handles = [document.getElementById('h0'), document.getElementById('h1'), document.getElementById('h2'), document.getElementById('h3')];
+  const nameRow = document.getElementById('nameRow');
+  const bottomSummary = document.getElementById('bottomSummary');
+  const bottomDetected = document.getElementById('bottomDetected');
+  const compareInfo = document.getElementById('compareInfo');
 
   let img = new Image();
   let naturalW = 0, naturalH = 0;
   let dragging = null;
 
+  // Default names (if OCR fails)
+  let playerNames = ['A','B','C','D'];
+
   function setStatus(t) { status.textContent = t; }
 
-  // Görsel yükleme ortak fonksiyonu
-  function loadImageFile(file) {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    img = new Image();
-    img.onload = () => {
-      naturalW = img.width;
-      naturalH = img.height;
-      drawImageToCanvas();
-      setDefaultHandles();
-      setStatus('Fotoğraf yüklendi. Sütun sınırlarını ayarlayın, sonra "OCR & Hesapla"ya basın.');
-    };
-    img.src = url;
-  }
-
-  // Canvas çizimi responsive
+  // Draw image responsive
   function drawImageToCanvas() {
     const maxWidth = Math.min(window.innerWidth - 24, 760);
     const scale = Math.min(maxWidth / naturalW, 1);
@@ -129,15 +135,45 @@
     });
   }
 
-  // Buton tıklamaları: gizli inputları tetikle
+  // Render name inputs
+  function renderNameInputs() {
+    nameRow.innerHTML = '';
+    playerNames.forEach((n, i) => {
+      const inp = document.createElement('input');
+      inp.className = 'nameInput';
+      inp.value = n;
+      inp.dataset.index = i;
+      inp.addEventListener('input', (e) => {
+        playerNames[parseInt(e.target.dataset.index)] = e.target.value || ('P'+(parseInt(e.target.dataset.index)+1));
+      });
+      nameRow.appendChild(inp);
+    });
+  }
+
+  // Load image
+  function loadImageFile(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    img = new Image();
+    img.onload = () => {
+      naturalW = img.width;
+      naturalH = img.height;
+      drawImageToCanvas();
+      setDefaultHandles();
+      setStatus('Fotoğraf yüklendi. Önce üst isim satırı otomatik algılanacak; sonra sütun sınırlarını ayarla ve "OCR & Hesapla"ya basın.');
+      // run quick top OCR to detect names
+      detectTopNames().catch(e=>console.warn(e));
+    };
+    img.src = url;
+  }
+
+  // Button wiring
   btnCamera.addEventListener('click', () => fileCamera.click());
   btnGallery.addEventListener('click', () => fileGallery.click());
 
-  // input değişim olayları (her iki input da aynı işlevi kullanır)
   fileCamera.addEventListener('change', (e) => {
     const f = e.target.files && e.target.files[0];
     if (f) loadImageFile(f);
-    // input tekrar kullanılsın diye sıfırla (aynı dosya tekrar seçilse de çalışır)
     fileCamera.value = '';
   });
   fileGallery.addEventListener('change', (e) => {
@@ -149,6 +185,9 @@
   resetBtn.addEventListener('click', () => {
     ctx.clearRect(0,0,canvas.width, canvas.height);
     resultsDiv.innerHTML = '';
+    bottomSummary.style.display = 'none';
+    playerNames = ['A','B','C','D'];
+    renderNameInputs();
     setStatus('Yeni fotoğraf seçin.');
   });
 
@@ -161,7 +200,7 @@
     });
   });
 
-  // draggable handles (pointer events)
+  // Draggable handles
   handles.forEach(h => {
     h.addEventListener('pointerdown', (e) => {
       dragging = h;
@@ -180,8 +219,63 @@
     });
   });
 
-  // sütun kırpma
-  function cropColumnImage(colIndex) {
+  // Crop helpers (coordinates in canvas pixels)
+  function cropArea(xPct1, yPct1, xPct2, yPct2) {
+    const w = canvas.width, h = canvas.height;
+    const left = Math.round(xPct1 * w);
+    const top = Math.round(yPct1 * h);
+    const cw = Math.max(1, Math.round((xPct2 - xPct1) * w));
+    const ch = Math.max(1, Math.round((yPct2 - yPct1) * h));
+    const temp = document.createElement('canvas');
+    temp.width = cw;
+    temp.height = ch;
+    const tctx = temp.getContext('2d');
+    tctx.drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
+    return temp;
+  }
+
+  // Detect top names: crop top ~12% of image height and run OCR
+  async function detectTopNames() {
+    try {
+      setStatus('Üst satırdan isim algılanıyor (OCR)...');
+      const topCrop = cropArea(0, 0, 1, 0.12); // top 12%
+      const blob = await new Promise(res => topCrop.toBlob(res, 'image/png'));
+      const { data: { text } } = await Tesseract.recognize(blob, 'tur+eng');
+      // normalize text: split by lines, take first non-empty line
+      const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        setStatus('İsim algılanamadı — lütfen elle girin veya üstü net bir fotoğraf yükleyin.');
+        playerNames = ['A','B','C','D'];
+        renderNameInputs();
+        return;
+      }
+      const first = lines[0];
+      // split tokens by spaces or separators, keep short tokens (1-3 chars) as initials
+      const tokens = first.split(/[\s,;|·•\-–—]+/).map(t=>t.trim()).filter(Boolean);
+      // heuristics: prefer tokens of length 1-3; if there are more, take first 4 (or as many as handles+1)
+      const maxPlayers = handles.length + 1;
+      let names = tokens.filter(t => t.length <= 3);
+      if (names.length < maxPlayers) {
+        // fallback: use all tokens
+        names = tokens.slice(0, maxPlayers);
+      } else {
+        names = names.slice(0, maxPlayers);
+      }
+      // pad if less
+      while (names.length < maxPlayers) names.push('P' + (names.length+1));
+      playerNames = names;
+      renderNameInputs();
+      setStatus('Üst isim satırı algılandı. Gerekirse düzeltin, sonra sütun sınırlarını ayarlayın.');
+    } catch (err) {
+      console.warn(err);
+      setStatus('İsim algılama sırasında hata. İsimleri elle düzenleyebilirsiniz.');
+      playerNames = ['A','B','C','D'];
+      renderNameInputs();
+    }
+  }
+
+  // Crop a column (using handles) and return canvas
+  function cropColumnCanvas(colIndex) {
     const w = canvas.width;
     const h = canvas.height;
     const pos = handles.map(hh => parseFloat(hh.dataset.pos || 0.5));
@@ -197,21 +291,48 @@
     return temp;
   }
 
-  // OCR + hesaplama
+  // Bottom line detection: crop bottom ~10-14% to read final per-player totals
+  async function detectBottomSummary() {
+    try {
+      bottomSummary.style.display = 'none';
+      const lowCrop = cropArea(0, 0.86, 1, 1.0); // bottom 14%
+      const blob = await new Promise(res => lowCrop.toBlob(res, 'image/png'));
+      const { data: { text } } = await Tesseract.recognize(blob, 'tur+eng');
+      const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      if (lines.length === 0) return null;
+      // try to extract numbers in left-to-right order
+      const tokens = lines.join(' ').replace(/[^\d\-\+\s,\.]/g, ' ').split(/\s+/).filter(Boolean);
+      // keep numeric tokens only
+      const nums = tokens.map(t => {
+        const m = t.match(/[-+]?\d+/);
+        return m ? parseInt(m[0],10) : null;
+      }).filter(n=>n!==null);
+      if (nums.length === 0) return null;
+      // try to map to players: take first N numbers where N = players
+      const count = Math.min(nums.length, handles.length+1);
+      return nums.slice(0, count);
+    } catch (err) {
+      console.warn('Bottom detect err', err);
+      return null;
+    }
+  }
+
+  // Main OCR & calculate
   async function runOCRAndCalculate() {
     if (!canvas.width) { alert('Önce fotoğraf yükleyin.'); return; }
-    setStatus('OCR çalışıyor — lütfen bekleyin (her sütun için kısa süre)...');
+    setStatus('Sütunlar OCR ile işleniyor — bekleyin...');
     resultsDiv.innerHTML = '';
+    bottomSummary.style.display = 'none';
     const colCount = handles.length + 1;
     const colData = [];
 
     for (let i=0;i<colCount;i++) {
-      const temp = cropColumnImage(i);
+      const temp = cropColumnCanvas(i);
       const blob = await new Promise(res => temp.toBlob(res, 'image/png'));
       const url = URL.createObjectURL(blob);
       const container = document.createElement('div');
       container.className = 'colResult';
-      container.innerHTML = `<div class="colHeader"><strong>Sütun ${i+1}</strong><small>OCR sonuçlarını kontrol edip düzenleyebilirsiniz</small></div>
+      container.innerHTML = `<div class="colHeader"><strong>${playerNames[i] || ('P'+(i+1))}</strong><small> (Sütun ${i+1}) — OCR sonucu düzenleyebilirsiniz</small></div>
         <img src="${url}" class="preview" />
         <div style="margin-bottom:6px"><em>Tanıma sonucu (yükleniyor...)</em></div>
         <textarea data-col="${i}" ></textarea>`;
@@ -230,55 +351,120 @@
       }
     }
 
-    function parseNumbersFromText(s) {
-      const cleaned = s.replace(/[^\d\-\+\n\r,\. ]+/g, ' ');
-      const matches = cleaned.match(/[-+]?\d+/g);
-      if (!matches) return [];
-      return matches.map(x => parseInt(x, 10));
+    // Helper: parse tokens according to rules specified
+    function parseNumbersFromTextForRules(s) {
+      // Normalize common dash characters to simple hyphen
+      const norm = s.replace(/[–—−]/g, '-');
+      // Split by lines
+      const lines = norm.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const nums = [];
+      for (const line of lines) {
+        // if the whole line is just "-" or "-" with spaces -> treat as -101
+        if (/^[-–—\u2212]+$/.test(line)) { nums.push(-101); continue; }
+        // find explicit standalone '-' possibly next to other chars
+        if (/^-$/.test(line)) { nums.push(-101); continue; }
+        // search for explicit token "200"
+        if (/\b200\b/.test(line)) {
+          // if line also contains a numeric value other than 200, prefer explicit numbers
+          const m = line.match(/[-+]?\d+/g);
+          if (m && m.length>0) {
+            // push all found as numbers, but 200 included
+            m.forEach(x => {
+              const v = parseInt(x,10);
+              nums.push(v);
+            });
+            continue;
+          } else {
+            nums.push(200);
+            continue;
+          }
+        }
+        // otherwise extract all integers in the line
+        const m = line.match(/[-+]?\d+/g);
+        if (m) {
+          m.forEach(x => {
+            const v = parseInt(x,10);
+            // if token equals '-' handled above; here numeric tokens push directly
+            nums.push(v);
+          });
+        }
+      }
+      return nums;
     }
 
+    // compute per-column summary
     const summary = [];
     for (let i=0;i<colData.length;i++) {
       const t = colData[i].textarea.value;
-      const nums = parseNumbersFromText(t);
+      const nums = parseNumbersFromTextForRules(t);
       const sum = nums.reduce((a,b)=>a+(isNaN(b)?0:b), 0);
-      summary.push({index:i+1, numbers:nums, sum});
+      summary.push({index:i+1, name: playerNames[i] || ('P'+(i+1)), numbers:nums, sum});
     }
 
+    // show results table
     let maxSum = Math.max(...summary.map(s=>s.sum));
     if (!isFinite(maxSum)) maxSum = 0;
     const tbl = document.createElement('table');
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>Sütun</th><th>Toplam</th><th>Sayılar (OCR ile bulunup düzenlenebilir)</th></tr>';
+    thead.innerHTML = '<tr><th>Sütun</th><th>İsim</th><th>Toplam</th><th>Bulunan Sayılar</th></tr>';
     tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     summary.forEach(s => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${s.index}</td><td class="${s.sum === maxSum && maxSum>0 ? 'loser' : ''}">${s.sum}</td><td>${s.numbers.join(', ')}</td>`;
+      tr.innerHTML = `<td>${s.index}</td><td>${s.name}</td><td class="${s.sum === maxSum && maxSum>0 ? 'loser' : ''}">${s.sum}</td><td>${s.numbers.join(', ')}</td>`;
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
     const title = document.createElement('div');
     title.style.marginTop = '8px';
-    title.innerHTML = `<strong>Hesaplama Sonuçları</strong>`;
+    title.innerHTML = `<strong>Hesaplama Sonuçları (kurallar uygulandı)</strong>`;
     resultsDiv.appendChild(title);
     resultsDiv.appendChild(tbl);
 
-    setStatus('OCR tamamlandı. Sonuçları kontrol edip hatalı yerleri textareada düzeltin, sonra tekrar "OCR & Hesapla"ye basın.');
+    setStatus('Sütun OCR tamamlandı. Alt özet satırı aranıyor...');
+    // detect bottom summary and compare
+    const bottomNums = await detectBottomSummary();
+    if (bottomNums && bottomNums.length>0) {
+      bottomSummary.style.display = 'block';
+      bottomDetected.innerText = 'Algılanan alt satır sayıları (soldan sağa): ' + bottomNums.join(' — ');
+      // compare with our calculated sums
+      const calcSums = summary.map(s=>s.sum);
+      // If bottomNums length differs, try to align by count
+      const compare = [];
+      for (let i=0;i<Math.max(calcSums.length, bottomNums.length); i++){
+        const calc = calcSums[i] !== undefined ? calcSums[i] : null;
+        const bot = bottomNums[i] !== undefined ? bottomNums[i] : null;
+        const diff = (bot !== null && calc !== null) ? (bot - calc) : null;
+        compare.push({index:i+1, calc, bot, diff});
+      }
+      // render compare
+      let ciHtml = '<table><thead><tr><th>Sütun</th><th>Hesaplanan</th><th>Kağıttaki (Alt Satır)</th><th>Fark (Alt - Hesap)</th></tr></thead><tbody>';
+      compare.forEach(c=>{
+        ciHtml += `<tr><td>${c.index}</td><td>${c.calc===null?'—':c.calc}</td><td>${c.bot===null?'—':c.bot}</td><td>${c.diff===null?'—':c.diff}</td></tr>`;
+      });
+      ciHtml += '</tbody></table>';
+      compareInfo.innerHTML = ciHtml;
+      setStatus('Tamamlandı. Alt satır ile karşılaştırma yapıldı. Hatalı OCR varsa ilgili sütundaki textarea\'yı düzenleyin ve tekrar "OCR & Hesapla"ya basın.');
+    } else {
+      bottomSummary.style.display = 'none';
+      setStatus('Alt satır algılanamadı. Eğer kağıtta özet varsa daha net bir fotoğraf çekmeyi deneyin.');
+    }
   }
 
   ocrBtn.addEventListener('click', runOCRAndCalculate);
 
-  // init handle positions
+  // initialize
   handles.forEach((h,i) => {
     if (!h.dataset.pos) h.dataset.pos = (i+1)/(handles.length+1);
   });
+  playerNames = ['M','F','H','N']; // default common initials
+  renderNameInputs();
 
   window.addEventListener('resize', ()=>{
     if (img && img.src) drawImageToCanvas();
   });
 
-  setStatus('Fotoğraf yükleyin veya çekin. "Kamera ile çek" veya "Galeriden seç" kullanın. Yükledikten sonra dikey çizgileri sütun sınırlarına getirip OCR & Hesapla\'ya basın.');
+  setStatus('Sayfa hazır. "Kamera ile çek" veya "Galeriden seç" ile başlayın. Üst isim satırı otomatik algılanacaktır.');
 })();
 </script>
 </body>
